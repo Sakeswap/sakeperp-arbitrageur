@@ -1,14 +1,14 @@
 # sakeperp-arbitrageur
-The `sakeperp-arbitrageur` is an arbitrage bot that  execute automated trading strategies between SakePerp ([site](https://sakeperp.fi/)) and centralized perpetual exchange like Binance/FTX/Huobi/OKex.
+The `sakeperp-arbitrageur` is an arbitrage bot that executes automated trading strategies between SakePerp ([site](https://sakeperp.fi/)) and centralized perpetual exchange like Binance/FTX/Huobi/OKex.
 
 
 
 # Default Strategy
-The default strategy is to "buy low, sell high" to make profit between two different exchanges. 
+The default strategy is to "buy low, sell high" to make profit between two different exchanges.
 
-The logic behind the the strategy is that the independent price discovery during SakePerp and CEX may lead to price difference for the same trading pair sometimes, but they are tend to be consistent in the long term.
+The logic behind the the strategy is that the independent price discovery during SakePerp and CEX may lead to price difference for the same trading pair sometimes, but they tend to be consistent in the long term.
 
-For example, when the ETH-perp on SakePerp is 1500, and 1520 at FTX, we could long ETH-perp at Perp exchange, and short at FTX in the expectation that some time later the prices will converge. Let's say the price at SakePerp increases to 1550, and the price at FTX increases to 1545. The bot will sell the positions at both exchanges. The PnL in this example will be +50 USD on SakePerp, and -25 USD at FTX, for a total of +25 USD. 
+For example, when the ETH-perp on SakePerp is 1500, and 1520 on FTX, we could long ETH-perp on the Perp exchange, while short on FTX in the expectation that some time later the prices will converge. Let's say the price at SakePerp increases to 1550, and the price at FTX increases to 1545. The bot will sell the positions at both exchanges. The PnL in this example will be +50 USD on SakePerp, and -25 USD at FTX, for a total of +25 USD.
 
 See the following table for multiple cases.
 
@@ -23,13 +23,13 @@ See the following table for multiple cases.
 
 
 
-# Attentions
+# Warning
 
-Pay attention that this code is provided for educational purposes only.
+Please be warned that this code is provided for educational purposes only.
 
 1. Derivatives trading carries substantial risks and possible loss of up to 100% of your funds. 
 
-   Please review the definitions of each parameter in the code carefully. Make sure you fully understand the parameters like leverage, trigger conditions, exit conditions and etc before trading.
+   Please review the definitions of each parameter in the code carefully. Make sure you fully understand the parameters like leverage, trigger conditions, exit conditions etc before trading.
 
 2. Perpetual contract trading may be regulated in your jurisdiction. 
 
@@ -41,7 +41,7 @@ Pay attention that this code is provided for educational purposes only.
 
 ## Account preparation 
 
-- Deposit BUSD for trading on [SakePerp Exchange](https://www.binance.com/zh-CN/busd)
+- Deposit BUSD to trade on [SakePerp Exchange](https://app.sakeperp.fi/mm-pools/)
 - Deposit enough USD or appropriate stablecoins on CEX exchange (Binance/FTX/Huobi/OKex), acquire the API which is allowed for perpetual contract trading.
 
 ## Download
@@ -75,12 +75,12 @@ LOG_PERSISTENCE=false
 ```
 **Notes:**
 
-1. The default `WEB3_ENDPOINT` in`.env.production` is from Binance official which is not stable enough , it's highly recommended to set up your own BSC node or buy services from 3rd party.
+1. The default `WEB3_ENDPOINT` in`.env.production` is from Binance official which is not stable enough , it's highly recommended you set up your own BSC node or buy services from 3rd party.
    1. QuikNode : [https://quiknode.io](https://quiknode.io/)
    2. ANKR: https://app.ankr.com/api
    3. GetBlock.io: https://getblock.io/nodes/bsc
 
-2.  `sakeperp-arbitrageur` supports 4 CEX exchanges: [Binance](https://www.binance.com/), [FTX](https://ftx.com/), [Huobi](https://www.huobi.com/) and [OKex](https://www.okex.com/), choose one as you like.
+2.  `sakeperp-arbitrageur` supports 4 CEX exchanges: [Binance](https://www.binance.com/), [FTX](https://ftx.com/), [Huobi](https://www.huobi.com/) and [OKex](https://www.okex.com/), choose your preferred platform.
 
 
 
@@ -116,7 +116,7 @@ Edit the trading parameters in `config/config.json`:
 
 **Notes:**
 
-1. `CEX_MARKET_ID` in different CEX is different , use the correct name with your CEX.
+1. `CEX_MARKET_ID` is different in every CEX , use the correct name with your CEX.
 2. Read [config/config.json](https://github.com/Sakeswap/sakeperp-arbitrageur/blob/main/config/config.json) and [src/Arbitrageur.ts](https://github.com/Sakeswap/sakeperp-arbitrageur/blob/main/src/Arbitrageur.ts) for more details.
 
 ## Run
@@ -165,7 +165,7 @@ start a docker container：
 ```
 docker-compose up -d
 ```
-if change the `config.json`, please restart docker container
+if you change the `config.json`, please restart docker container
 
 ## Feedback
 
