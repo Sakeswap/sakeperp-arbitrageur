@@ -1,0 +1,38 @@
+service: sakeperp-arbitrageur
+
+plugins:
+    - serverless-offline
+    - serverless-dotenv-plugin
+    - serverless-webpack
+
+provider:
+    name: aws
+    runtime: nodejs12.x
+    memorySize: 256
+    timeout: 60
+    versionFunctions: false
+    apiGateway:
+        minimumCompressionSize: 1024
+    stage: production
+    region: ap-northeast-1
+    environment:
+        WEB3_ENDPOINT: ${env:WEB3_ENDPOINT}
+        ARBITRAGEUR_PK: ${env:ARBITRAGEUR_PK}
+        FTX_API_KEY: ${env:FTX_API_KEY}
+        FTX_API_SECRET: ${env:FTX_API_SECRET}
+
+custom:
+    serverless-offline:
+        port: 3002
+        noTimeout: true
+
+    webpack:
+        webpackConfig: 'webpack.config.js'
+        includeModules: false
+        packager: 'npm'
+
+functions:
+    arbitrageur:
+        handler: build/src/schedule.handler
+        events:
+            - schedule: rate(1 minute)

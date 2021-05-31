@@ -1,0 +1,37 @@
+{
+    "PreflightCheck": {
+        "BLOCK_TIMESTAMP_FRESHNESS_THRESHOLD": 1800,
+        "GAS_BALANCE_THRESHOLD": 1,
+        "USD_BALANCE_THRESHOLD": 100,
+        "CEX_USD_BALANCE_THRESHOLD": 100,
+        "CEX_MARGIN_RATIO_THRESHOLD": 0.1
+    },
+    "ExchangeConfig": [
+        {
+            "Pair": "BTC-BUSD",
+            "ENABLED": true,
+            "ASSET_CAP": 100,
+            "SAKEPERP_LEVERAGE": 5,
+            "SAKEPERP_MIN_TRADE_NOTIONAL": 10,
+            "SAKEPERP_SHORT_ENTRY_TRIGGER": 0.005,
+            "SAKEPERP_LONG_ENTRY_TRIGGER": -0.005,
+            "ADJUST_MARGIN_RATIO_THRESHOLD": 0.1,
+            "MAX_SLIPPAGE_RATIO": 0.001,
+            "CEX_MARKET_ID": "BTC-USDT",
+            "CEX_MIN_TRADE_SIZE": 0.001
+        },
+        {
+            "Pair": "ETH-BUSD",
+            "ENABLED": true,
+            "ASSET_CAP": 100,
+            "SAKEPERP_LEVERAGE": 5,
+            "SAKEPERP_MIN_TRADE_NOTIONAL": 10,
+            "SAKEPERP_SHORT_ENTRY_TRIGGER": 0.005,
+            "SAKEPERP_LONG_ENTRY_TRIGGER": -0.005,
+            "ADJUST_MARGIN_RATIO_THRESHOLD": 0.1,
+            "MAX_SLIPPAGE_RATIO": 0.001,
+            "CEX_MARKET_ID": "ETH-USDT",
+            "CEX_MIN_TRADE_SIZE": 0.001
+        }
+     ]
+}

@@ -1,0 +1,12 @@
+version: "3.5"
+
+services:
+  sakeperp-arbitrageur:
+    image: sakeperp/arbitrageur:latest
+    container_name: sakeperp-arbitrageur
+    volumes:
+      - type: bind
+        source: .
+        target: /usr/src/app/config/
+    restart: unless-stopped
+    command: npm run arbitrage
