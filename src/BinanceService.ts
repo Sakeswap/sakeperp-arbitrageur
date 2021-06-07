@@ -105,9 +105,8 @@ export class BinanceService implements CexService {
     }
 
     async placeOrder(client: any, payload: PlaceOrderPayload): Promise<void> {
-        if (payload.market == "BNBUSDT" || payload.market == "LINKUSDT") {
-            payload.size = parseFloat(payload.size.toFixed(2))
-        }
+        const quantityPrecision = await this.baseAssetPrecision(payload.market)
+        payload.size = parseFloat(payload.size.toFixed(quantityPrecision))
 
         await this.getServerTime()
 
@@ -125,6 +124,7 @@ export class BinanceService implements CexService {
             this.log.jinfo({
                 event: "PlaceOrder",
                 params: response.data,
+                precision: quantityPrecision, 
             })
         } catch (error) {
             this.log.jinfo({
@@ -259,5 +259,20 @@ export class BinanceService implements CexService {
             return true
         }
         return false
+    }
+
+    private async baseAssetPrecision(asset: string):  Promise<number>  {
+        const response = await this.makeRequest(
+            `${this.url}/fapi/v1/exchangeInfo`,
+            "get",
+            AuthenticationMethod.NONE,
+        )
+        for (let i = 0; i < response.data.symbols.length; i++) {
+            const symbolInfo = response.data.symbols[i]
+            if (asset == symbolInfo.symbol) {
+                return symbolInfo.quantityPrecision
+            }
+        }
+        return 0
     }
 }
