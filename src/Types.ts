@@ -36,8 +36,16 @@ export interface CexMarket {
     last?: Big
 }
 
+
+export interface CexPositionRisk {
+    markPrice: Big
+    liquidationPrice: Big
+}
+
+
 export enum AuthenticationMethod {
     NONE,
     API_KEY,
     SIGNED,
 }
+

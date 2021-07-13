@@ -1,4 +1,4 @@
-import { AccountInfo, CexPosition, PlaceOrderPayload, CexMarket, PositionSizeMitigation } from "./Types"
+import { AccountInfo, CexPosition, PlaceOrderPayload, CexMarket, PositionSizeMitigation,CexPositionRisk } from "./Types"
 import Big from "big.js"
 import { Side } from "./PerpService"
 
@@ -8,6 +8,8 @@ export interface CexService {
     getPosition(client: any, marketId: string): Promise<CexPosition>;
     getTotalPnLs(client: any): Promise<Record<string, number>>;
     placeOrder(client: any, payload: PlaceOrderPayload): Promise<void>;
+    transferFromSpot(amount: Big): Promise<void>
+    positionRisk(asset: string):  Promise<CexPositionRisk>  
 }
 
 export function mitigatePositionSizeDiff(sakeperpPositionSize: Big, cexPositionSize: Big): PositionSizeMitigation {

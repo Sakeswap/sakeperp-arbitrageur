@@ -176,14 +176,14 @@ export class PerpService {
             }
         }
 
-        this.log.info(
-            JSON.stringify({
-                event: "GetAllOpenExchanges",
-                params: {
-                    exchangeAddrs: exchanges.map(exchange => exchange.address),
-                },
-            }),
-        )
+        // this.log.info(
+        //     JSON.stringify({
+        //         event: "GetAllOpenExchanges",
+        //         params: {
+        //             exchangeAddrs: exchanges.map(exchange => exchange.address),
+        //         },
+        //     }),
+        // )
         return exchanges
     }
 
@@ -244,6 +244,7 @@ export class PerpService {
 
     async openPosition(
         trader: Wallet,
+        exchangePair: string,
         exchangeAddr: string,
         side: Side,
         quoteAssetAmount: Big,
@@ -282,6 +283,7 @@ export class PerpService {
         this.log.jinfo({
             event: "OpenPositionTxSent",
             params: {
+                exchangePair: exchangePair,
                 trader: trader.address,
                 amm: exchangeAddr,
                 side,

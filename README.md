@@ -2,12 +2,12 @@
 
 **[English](README.md)** **[中文](README_CN.md)**
 
-The `sakeperp-arbitrageur` is an arbitrage bot that executes automated trading strategies between SakePerp ([site](https://sakeperp.fi/)) and centralized perpetual exchange like Binance/FTX/Huobi/OKex.
+The `sakeperp-arbitrageur` is an arbitrage bot that executes automated trading strategies between SakePerp ([site](https://sakeperp.fi/)) and centralized perpetual exchange like Binance/FTX.
 
 
 
 # Default Strategy
-The default strategy is to "buy low, sell high" to make profit between two different exchanges.
+The basic logic is "buy low, sell high" to make profit between two different exchanges.
 
 The logic behind the the strategy is that the independent price discovery during SakePerp and CEX may lead to price difference for the same trading pair sometimes, but they tend to be consistent in the long term.
 
@@ -24,6 +24,9 @@ See the following table for multiple cases.
 | Case3   | 1545           | -25          | 1550      | +50     | +25       |
 | Case4   | 1450           | +70          | 1455      | -45     | +25       |
 
+Besides default strategy, several features been added:
+- cyclely open model to open-close model.
+- balance mointioring and email notification.
 
 
 # Warning
@@ -45,7 +48,7 @@ Please be warned that this code is provided for educational purposes only.
 ## Account preparation 
 
 - Deposit BUSD to trade on [SakePerp Exchange](https://app.sakeperp.fi/mm-pools/)
-- Deposit enough USD or appropriate stablecoins on CEX exchange (Binance/FTX/Huobi/OKex), acquire the API which is allowed for perpetual contract trading.
+- Deposit enough USD or appropriate stablecoins on CEX exchange (Binance/FTX), acquire the API which is allowed for perpetual contract trading.
 
 ## Download
 
@@ -63,7 +66,7 @@ WEB3_ENDPOINT=wss://bsc-ws-node.nariox.org:443
 # The private key must start with "0x" - add it if necessary (e.g. from private key exported from Metamask)
 ARBITRAGEUR_PK=YOUR_WALLET_PRIVATE_KEY
 
-# binance/ftx/huobi/okex
+# binance/ftx
 CEX_PLATFORM=binance
 
 # CEX API keys
@@ -83,7 +86,7 @@ LOG_PERSISTENCE=false
    2. ANKR: https://app.ankr.com/api
    3. GetBlock.io: https://getblock.io/nodes/bsc
 
-2.  `sakeperp-arbitrageur` supports 4 CEX exchanges: [Binance](https://www.binance.com/), [FTX](https://ftx.com/), [Huobi](https://www.huobi.com/) and [OKex](https://www.okex.com/), choose your preferred platform.
+2.  `sakeperp-arbitrageur` supports [FTX](https://ftx.com/), [Binance](https://www.binance.com/) currently, other exchanges: [Huobi](https://www.huobi.com/) and [OKex](https://www.okex.com/) will be adding soon.
 
 
 
@@ -109,7 +112,7 @@ Edit the trading parameters in `config/config.json`:
             "SAKEPERP_LONG_ENTRY_TRIGGER": -0.005,  // open the long position at Perp exchange when the spread is =< -0.5%
             "ADJUST_MARGIN_RATIO_THRESHOLD": 0.1,
             "MAX_SLIPPAGE_RATIO": 0.001,  // set the max slippage ratio limit to avoid large slippage 
-            "CEX_MARKET_ID": "BTC-USDT",  // perpetual pair name in Binance/FTX/Huobi/OKex.
+            "CEX_MARKET_ID": "BTC-USDT",  // perpetual pair name in Binance/FTX.
             "CEX_MIN_TRADE_SIZE": 0.001   
         },
         .....
@@ -147,7 +150,7 @@ mkdir sakeperp-arbitrageur
 cd  sakeperp-arbitrageur
 ```
 
-copy `.env.production` and `config.json` file in the /config folder to the new folder and create a docker-compose.yml file in the same folder：
+copy `.env.production`, `config.json` and `tradingdata.json` file in the /config folder to the new folder and create a docker-compose.yml file in the same folder：
 ```yml
 version: "3.5"
 

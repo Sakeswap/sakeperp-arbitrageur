@@ -9,4 +9,4 @@ services:
         source: .
         target: /usr/src/app/config/
     restart: unless-stopped
-    command: npm run arbitrage
+    command: npm run arbitrage 

@@ -17,6 +17,8 @@
     "dependencies": {
         "@luminati-io/socksv5": "0.0.7",
         "@sakeperp/artifact": "1.0.4",
+        "@types/nodemailer": "^6.3.0",
+        "@types/fs-extra": "8.1.0",
         "async-mutex": "0.2.6",
         "big.js": "5.2.2",
         "binance-api-client": "^2.10.2",
@@ -34,7 +36,9 @@
         "source-map-support": "0.5.19",
         "typedi": "0.8.0",
         "crypto-js": "^4.0.0",
-        "axios": "^0.21.1"
+        "axios": "^0.21.1",
+        "nodemailer": "^6.3.0",
+        "fs-extra": "8.1.0"
     },
     "devDependencies": {
         "@testdeck/di-typedi": "0.0.10",

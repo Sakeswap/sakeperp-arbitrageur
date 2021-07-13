@@ -4,11 +4,14 @@ import { Service } from "typedi"
 import Big from "big.js"
 import fetch from "node-fetch"
 import { CexService } from "./CexService"
-import { AccountInfo, CexPosition, PlaceOrderPayload, CexMarket } from "./Types"
+import { AccountInfo, CexPosition, PlaceOrderPayload, CexMarket,CexPositionRisk } from "./Types"
+import { Mutex } from "async-mutex"
+import { sleep } from "./util"
 
 @Service()
 export class FtxService implements CexService {
     private readonly log = Log.getLogger(FtxService.name)
+    private readonly txMutex = new Mutex()
 
     async getMarket(marketName: string): Promise<CexMarket> {
         const response = await fetch(`https://ftx.com/api/markets/${marketName}`)
@@ -22,10 +25,10 @@ export class FtxService implements CexService {
             method: "GET",
             path: "/account",
         })
-        this.log.jinfo({
-            event: "GetAccountInfo",
-            params: data,
-        })
+        // this.log.jinfo({
+        //     event: "GetAccountInfo",
+        //     params: data,
+        // })
 
         const positionsMap: Record<string, CexPosition> = {}
         for (let i = 0; i < data.result.positions.length; i++) {
@@ -49,10 +52,10 @@ export class FtxService implements CexService {
             method: "GET",
             path: "/positions",
         })
-        this.log.jinfo({
-            event: "GetPositions",
-            params: data,
-        })
+        // this.log.jinfo({
+        //     event: "GetPositions",
+        //     params: data,
+        // })
         const positions: Record<string, CexPosition> = {}
         for (let i = 0; i < data.result.length; i++) {
             const positionEntity = data.result[i]
@@ -73,15 +76,22 @@ export class FtxService implements CexService {
     }
 
     async placeOrder(ftxClient: any, payload: PlaceOrderPayload): Promise<void> {
-        const data = await ftxClient.request({
-            method: "POST",
-            path: "/orders",
-            data: payload,
-        })
-        this.log.jinfo({
-            event: "PlaceOrder",
-            params: data,
-        })
+        const release = await this.txMutex.acquire()
+        try {
+
+            const data = await ftxClient.request({
+                method: "POST",
+                path: "/orders",
+                data: payload,
+            })
+            this.log.jinfo({
+                event: "PlaceOrder",
+                params: data,
+            })
+            await sleep(200)
+        } finally {
+            release()
+        }
     }
 
     // noinspection JSMethodCanBeStatic
@@ -101,4 +111,21 @@ export class FtxService implements CexService {
             cost: Big(positionEntity.cost ? positionEntity.cost : 0),
         }
     }
+
+    async transferFromSpot(amount: Big) :  Promise<void>  {
+        this.log.jerror({
+            event: "transferFromSpotNotImplmented",
+            amount: +amount.toFixed(),
+        }) 
+        return 
+    }
+
+
+    async positionRisk(asset: string):  Promise<CexPositionRisk>  {
+        return {
+            markPrice: Big(0),
+            liquidationPrice: Big(0)
+        }
+    }
+
 }

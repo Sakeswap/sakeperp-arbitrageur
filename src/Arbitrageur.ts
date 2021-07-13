@@ -15,12 +15,12 @@ import { Wallet } from "ethers"
 import Big from "big.js"
 import CEXRest from "ftx-api-rest"
 import { BinanceService } from "./BinanceService"
-import { OkexService } from "./OkexService"
-import { HuobiService } from "./HuobiService"
-import { CexService, mitigatePositionSizeDiff } from "./CexService"
-import { upperCase } from "lodash"
-import { PlaceOrderPayload } from "./Types"
-
+import { CexService, mitigatePositionSizeDiff  } from "./CexService"
+import { isNil, upperCase } from "lodash"
+import { PlaceOrderPayload, CexPosition } from "./Types"
+import nodemailer from "nodemailer";
+import {SentMessageInfo, Transporter, SendMailOptions} from "nodemailer";
+import { TradingData } from "./tradingdata"
 
 @Service()
 export class Arbitrageur {
@@ -30,8 +30,14 @@ export class Arbitrageur {
     private readonly arbitrageur: Wallet
     private readonly cexClient: any
     private readonly cexService: CexService
+    private readonly tradingData: TradingData
+    private readonly needTradingData: boolean
+
     private preflightCheck: PreflightCheck
     private exchangeConfigMap: Record<string, ExchangeConfig>
+    private openDEXPositionTime: Record<string, number>
+    private openCEXPositionTime: Record<string, number>
+    private emailEventMap:  Record<string, number> = {}
 
     private nextNonce!: number
     private sakeperpBalance = Big(0)
@@ -50,7 +56,10 @@ export class Arbitrageur {
 
         this.preflightCheck = preflightCheck
         this.exchangeConfigMap = exchangeConfigMap
+        this.openDEXPositionTime = {}
+        this.openCEXPositionTime = {}
 
+        this.tradingData = new TradingData()
         if (this.serverProfile.cexPlatform === "ftx") {
             this.cexService = new FtxService()
             this.cexClient = new CEXRest({
@@ -58,12 +67,10 @@ export class Arbitrageur {
                 secret: this.serverProfile.cexApiSecret,
                 subaccount: this.serverProfile.cexSubaccount,
             })
+            this.needTradingData = false
         } else if (this.serverProfile.cexPlatform === "binance") {
             this.cexService = new BinanceService(this.serverProfile.cexApiKey, this.serverProfile.cexApiSecret)
-        } else if (this.serverProfile.cexPlatform === "okex") {
-            this.cexService = new OkexService(this.serverProfile.cexApiKey, this.serverProfile.cexApiSecret, this.serverProfile.cexApiPassword)
-        } else if (this.serverProfile.cexPlatform === "huobi") {
-            this.cexService = new HuobiService(this.serverProfile.cexApiKey, this.serverProfile.cexApiSecret)
+            this.needTradingData = true
         } else {
             this.log.jerror({
                 event: "PlatformError",
@@ -71,7 +78,6 @@ export class Arbitrageur {
             })
             process.exit()
         }
-
     }
 
     async start(): Promise<void> {
@@ -92,6 +98,7 @@ export class Arbitrageur {
                 arbitrageur: this.arbitrageur.address,
             },
         })
+
         await this.arbitrage()
         setInterval(async () => await this.arbitrage(), 1000 * 60 * 1) // default 1 minute
     }
@@ -118,56 +125,17 @@ export class Arbitrageur {
             params: {
                 nextNonce: this.nextNonce,
             },
-        })
+        })        
 
         await this.checkBlockFreshness()
-
-        // Check gas balance - needed for gas payments
-        const gasBalance = await this.ethService.getBalance(this.arbitrageur.address)
-        this.log.jinfo({
-            event: "GasBalance",
-            params: { balance: gasBalance.toFixed() },
-        })
-        if (gasBalance.lt(this.preflightCheck.GAS_BALANCE_THRESHOLD)) {
-            this.log.jwarn({
-                event: "gasNotEnough",
-                params: { balance: gasBalance.toFixed() },
-            })
+        const enough = await this.checkDexGasBalance()
+        if (!enough) {
             return
         }
-
-        // Fetch CEX account info
-        const cexAccountInfo = await this.cexService.getAccountInfo(this.cexClient)
-
-        // Check CEX balance (USD)
-        const cexBalance = cexAccountInfo.freeCollateral
-        this.log.jinfo({
-            event: "CexUsdBalance",
-            params: { balance: cexBalance.toFixed() },
-        })
-        if (cexBalance.lt(this.preflightCheck.CEX_USD_BALANCE_THRESHOLD)) {
-            this.log.jerror({
-                event: "CexUsdNotEnough",
-                params: { balance: cexBalance.toFixed() },
-            })
+        const check = await this.checkCexBalance()
+        if (!check){
             return
         }
-
-        // Check CEX margin ratio
-        const cexMarginRatio = cexAccountInfo.marginFraction
-        this.log.jinfo({
-            event: "CexMarginRatio",
-            params: { cexMarginRatio: cexMarginRatio.toFixed() },
-        })
-        if (!cexMarginRatio.eq(0) && cexMarginRatio.lt(this.preflightCheck.CEX_MARGIN_RATIO_THRESHOLD)) {
-            this.log.jerror({
-                event: "CexMarginRatioTooLow",
-                params: { balance: cexMarginRatio.toFixed() },
-            })
-            return
-        }
-
-        this.cexAccountValue = cexAccountInfo.totalAccountValue
 
         const cexTotalPnlMaps = await this.cexService.getTotalPnLs(this.cexClient)
         for (const marketKey in cexTotalPnlMaps) {
@@ -210,13 +178,6 @@ export class Arbitrageur {
         const exchangeConfig = this.exchangeConfigMap[exchangePair]
 
         if (!exchangeConfig) {
-            this.log.jinfo({
-                event: "ExchangeConfigMissing",
-                params: {
-                    exchange: exchange.address,
-                    exchangePair,
-                },
-            })
             return
         }
 
@@ -227,9 +188,8 @@ export class Arbitrageur {
         this.log.jinfo({
             event: "ArbitrageExchange",
             params: {
-                exchange: exchange.address,
-                exchangeConfig,
                 exchangePair,
+                exchangeConfig,
             },
         })
 
@@ -237,16 +197,8 @@ export class Arbitrageur {
         const sakePerpAddr = systemMetadata.sakePerpAddr
         const quoteAssetAddr = await exchange.quoteAsset()
 
-        // Check Perpetual Protocol balance - quote asset is USDC
-        const quoteBalance = await this.erc20Service.balanceOf(quoteAssetAddr, arbitrageurAddr)
-        if (quoteBalance.lt(this.preflightCheck.USD_BALANCE_THRESHOLD)) {
-            this.log.jwarn({
-                event: "QuoteAssetNotEnough",
-                params: { balance: quoteBalance.toFixed() },
-            })
-            // NOTE we don't abort prematurely here because we don't know yet which direction
-            // the arbitrageur will go. If it's the opposite then it doesn't need more quote asset to execute
-        }
+        // Check balance - quote asset is BUSD
+        const quoteBalance = await this.checkDexBalance(quoteAssetAddr, arbitrageurAddr)
 
         this.sakeperpBalance = quoteBalance
 
@@ -274,24 +226,17 @@ export class Arbitrageur {
             this.perpService.getUnrealizedPnl(exchange.address, this.arbitrageur.address, PnlCalcOption.SPOT_PRICE),
         ])
 
+
         this.log.jinfo({
             event: "SakePerpPosition",
             params: {
                 exchangePair,
-                size: +position.size,
-                margin: +position.margin,
-                openNotional: +position.openNotional,
-            },
-        })
-
-        this.log.jinfo({
-            event: "SakePerpPnL",
-            params: {
-                exchangePair,
-                margin: +position.margin,
-                unrealizedPnl: +unrealizedPnl,
-                quoteBalance: +quoteBalance,
-                accountValue: +position.margin.add(unrealizedPnl).add(quoteBalance),
+                size: +position.size.toFixed(6),
+                margin: +position.margin.toFixed(6),
+                openNotional: +position.openNotional.toFixed(6),
+                unrealizedPnl: +unrealizedPnl.toFixed(6),
+                quoteBalance: +quoteBalance.toFixed(6),
+                accountValue: +position.margin.add(unrealizedPnl).add(quoteBalance).toFixed(6),
             },
         })
 
@@ -303,8 +248,8 @@ export class Arbitrageur {
                 event: "CexPosition",
                 params: {
                     marketId: cexPosition.future,
-                    size: +cexPosition.netSize,
-                    diff: +cexSizeDiff,
+                    size: +cexPosition.netSize.toFixed(6),
+                    diff: +cexSizeDiff.toFixed(6),
                 },
             })
 
@@ -319,7 +264,7 @@ export class Arbitrageur {
                         side: mitigation.side,
                     },
                 })
-                await this.openCEXPosition(exchangeConfig.CEX_MARKET_ID, exchangeConfig.SAKEPERP_LEVERAGE, mitigation.sizeAbs, mitigation.side)
+                await this.openCEXPosition(exchangeConfig.CEX_MARKET_ID, exchangeConfig.SAKEPERP_LEVERAGE, mitigation.sizeAbs, mitigation.side, true)
             }
         }
 
@@ -338,8 +283,8 @@ export class Arbitrageur {
             this.log.jinfo({
                 event: "MarginRatioBefore",
                 params: {
-                    marginRatio: +marginRatio,
-                    spotPositionNotional: +spotPositionNotional,
+                    marginRatio: +marginRatio.toFixed(6),
+                    spotPositionNotional: +spotPositionNotional.toFixed(6),
                     exchangePair,
                 },
             })
@@ -425,10 +370,10 @@ export class Arbitrageur {
         // we will leave it as is and not do any rebalance work
 
         // Fetch prices
-        const [exchangePrice, cexPrice, oraclePrice] = await Promise.all([
+        const [exchangePrice, cexPrice] = await Promise.all([
             this.fetchExchangePrice(exchange),
             this.fetchCexPrice(exchangeConfig),
-            this.fetchOraclePrice(exchange),
+            // this.fetchOraclePrice(exchange),
         ])
 
         // Calculate spread
@@ -442,60 +387,114 @@ export class Arbitrageur {
             exchangeState.quoteAssetReserve,
         )
 
-        this.log.jinfo({
-            event: "CalculatedPrice",
-            params: {
-                exchangePair,
-                ammPrice: exchangePrice.toFixed(4),
-                oraclePrice: oraclePrice.toFixed(4),
-                cexPrice: cexPrice.toFixed(4),
-                amm_oracle: exchangePrice.sub(oraclePrice).div(oraclePrice).toFixed(4), 
-                amm_cex: spread.toFixed(4),
-                oracle_cex: oraclePrice.sub(cexPrice).div(cexPrice).toFixed(4),
-            },
-        })
-
-        // Open positions if needed
-        if (spread.lt(exchangeConfig.SAKEPERP_LONG_ENTRY_TRIGGER)) {
-            const result = await this.perpService.checkWaitingPeriod(this.arbitrageur, exchange.address, this.arbitrageur.address, Side.BUY)
-            if (!result){
+        if (!position.size.eq(0)) { 
+            const check = await this.checkCexPositionRisk(exchangeConfig.CEX_MARKET_ID,spread,exchange,cexPosition)
+            if (!check){
                 return
             }
-
-            const regAmount = this.calculateRegulatedPositionNotional(exchangeConfig, quoteBalance, amount, position, Side.BUY)
-            const cexPositionSizeAbs = this.calculateCEXPositionSize(exchangeConfig, regAmount, cexPrice)
-            if (cexPositionSizeAbs.eq(Big(0))) {
-                return
+        
+            const openPrice = position.openNotional.div(position.size.abs())  
+            const priceDiff = exchangePrice.sub(openPrice).div(openPrice)    
+            let op = ""         
+            if (position.size.gt(0)) { // long
+                if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && exchangePrice.lt(openPrice)) {
+                    op = "long_loss"
+                } 
+                if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && priceDiff.gt(Big(exchangeConfig.SAKEPERP_LONG_OPEN_PRICE_SPREAD))) {
+                    op = "long_profit" 
+                }
+            } else {  // short
+               if ( spread.lte(Big(exchangeConfig.SAKEPERP_SHORT_CLOSE_TRIGGER)) && (exchangePrice.gt(openPrice))) {
+                    op = "short_loss"
+               }
+               
+               if ( spread.lte(Big(exchangeConfig.SAKEPERP_SHORT_CLOSE_TRIGGER)) && priceDiff.lt(Big(exchangeConfig.SAKEPERP_SHORT_OPEN_PRICE_SPREAD))) {
+                    op = "short_profit" 
+               } 
             }
-
-            await Promise.all([
-                this.openCEXPosition(exchangeConfig.CEX_MARKET_ID, exchangeConfig.SAKEPERP_LEVERAGE, cexPositionSizeAbs, Side.SELL),
-                this.openSakePerpPosition(exchange, exchangePair, regAmount, exchangeConfig.SAKEPERP_LEVERAGE, Side.BUY),
-            ])
-        } else if (spread.gt(exchangeConfig.SAKEPERP_SHORT_ENTRY_TRIGGER)) {
-            const result = await this.perpService.checkWaitingPeriod(this.arbitrageur, exchange.address, this.arbitrageur.address, Side.SELL)
-            if (!result){
-                return
-            }
-
-            const regAmount = this.calculateRegulatedPositionNotional(exchangeConfig, quoteBalance, amount, position, Side.SELL)
-            const cexPositionSizeAbs = this.calculateCEXPositionSize(exchangeConfig, regAmount, cexPrice)
-            if (cexPositionSizeAbs.eq(Big(0))) {
-                return
-            }
-
-            await Promise.all([
-                this.openCEXPosition(exchangeConfig.CEX_MARKET_ID, exchangeConfig.SAKEPERP_LEVERAGE, cexPositionSizeAbs, Side.BUY),
-                this.openSakePerpPosition(exchange, exchangePair, regAmount, exchangeConfig.SAKEPERP_LEVERAGE, Side.SELL),
-            ])
-        } else {
+           
             this.log.jinfo({
-                event: "NotTriggered",
+                event: "PositionProfit",
                 params: {
-                    spread,
-                    exchangeConfig
+                    exchangePair,
+                    operate: op,
+                    position:  +position.size.toFixed(6),
+                    openNotional: +position.openNotional.toFixed(6), 
+                    openPrice: +openPrice.toFixed(6),
+                    ammPrice: +exchangePrice.toFixed(6),
+                    cexPrice: +cexPrice.toFixed(6),
+                    amm_cex: +spread.toFixed(6),
+                    amm_open: +priceDiff.toFixed(6),
                 },
             })
+
+
+            if (op != "") {
+                await Promise.all([
+                    this.closeSakePerpPosition(exchange, exchangePair),
+                    this.closeCexPosition(exchangeConfig, cexPosition)
+                ])
+                this.setTradingData(exchangeConfig.CEX_MARKET_ID, Big(0))
+            }
+        }else{
+            this.log.jinfo({
+                event: "CalculatedPrice",
+                params: {
+                    exchangePair,
+                    ammPrice: exchangePrice.toFixed(4),
+                    cexPrice: cexPrice.toFixed(4),
+                    amm_cex: spread.toFixed(4),
+                },
+            })
+
+            // Open positions if needed
+            if (spread.lte(exchangeConfig.SAKEPERP_LONG_ENTRY_TRIGGER)) {
+                const result = await this.perpService.checkWaitingPeriod(this.arbitrageur, exchange.address, this.arbitrageur.address, Side.BUY)
+                if (!result){
+                    return
+                }
+
+                const regAmount = this.calculateRegulatedPositionNotional(exchangePair, exchangeConfig, quoteBalance, amount, position, Side.BUY)
+                const cexPositionSizeAbs = this.calculateCEXPositionSize(exchangeConfig, regAmount, cexPrice)
+                if (cexPositionSizeAbs.eq(Big(0))) {
+                    return
+                }
+
+                await Promise.all([
+                    this.openCEXPosition(exchangeConfig.CEX_MARKET_ID, exchangeConfig.SAKEPERP_LEVERAGE, cexPositionSizeAbs, Side.SELL, true),
+                    this.openSakePerpPosition(exchange, exchangePair, regAmount, exchangeConfig.SAKEPERP_LEVERAGE, Side.BUY),
+                ])
+                this.setTradingData(exchangeConfig.CEX_MARKET_ID, spread)
+ 
+            } else if (spread.gte(exchangeConfig.SAKEPERP_SHORT_ENTRY_TRIGGER)) {
+                const result = await this.perpService.checkWaitingPeriod(this.arbitrageur, exchange.address, this.arbitrageur.address, Side.SELL)
+                if (!result){
+                    return
+                }
+
+                const regAmount = this.calculateRegulatedPositionNotional(exchangePair, exchangeConfig, quoteBalance, amount, position, Side.SELL)
+                const cexPositionSizeAbs = this.calculateCEXPositionSize(exchangeConfig, regAmount, cexPrice)
+                if (cexPositionSizeAbs.eq(Big(0))) {
+                    return
+                }
+
+                await Promise.all([
+                    this.openCEXPosition(exchangeConfig.CEX_MARKET_ID, exchangeConfig.SAKEPERP_LEVERAGE, cexPositionSizeAbs, Side.BUY, true),
+                    this.openSakePerpPosition(exchange, exchangePair, regAmount, exchangeConfig.SAKEPERP_LEVERAGE, Side.SELL),
+                ])
+
+                this.setTradingData(exchangeConfig.CEX_MARKET_ID, spread)
+
+            } else {
+                this.log.jinfo({
+                    event: "NotTriggered",
+                    params: {
+                        exchangePair,
+                        spread
+                    },
+                })
+            }
+            this.sakeperpBalance = await this.checkDexBalance(quoteAssetAddr, arbitrageurAddr)
         }
     }
 
@@ -506,27 +505,27 @@ export class Arbitrageur {
     async fetchExchangePrice(exchange: Exchange): Promise<Big> {
         const exchangeState = await this.perpService.getExchangeStates(exchange.address)
         const exchangePrice = exchangeState.quoteAssetReserve.div(exchangeState.baseAssetReserve)
-        const exchangePair = this.getExchangePair(exchangeState)
-        this.log.jinfo({
-            event: "SakePerpPrice",
-            params: {
-                exchangePair: exchangePair,
-                price: exchangePrice.toFixed(),
-            },
-        })
+        // const exchangePair = this.getExchangePair(exchangeState)
+        // this.log.jinfo({
+        //     event: "SakePerpPrice",
+        //     params: {
+        //         exchangePair: exchangePair,
+        //         price: exchangePrice.toFixed(),
+        //     },
+        // })
         return exchangePrice
     }
 
     async fetchCexPrice(exchangeConfig: ExchangeConfig): Promise<Big> {
         const cexMarket = await this.cexService.getMarket(exchangeConfig.CEX_MARKET_ID)
         const cexPrice = cexMarket.last!
-        this.log.jinfo({
-            event: "CexPrice",
-            params: {
-                tokenPair: exchangeConfig.CEX_MARKET_ID,
-                price: cexPrice.toFixed(),
-            },
-        })
+        // this.log.jinfo({
+        //     event: "CexPrice",
+        //     params: {
+        //         tokenPair: exchangeConfig.CEX_MARKET_ID,
+        //         price: cexPrice.toFixed(),
+        //     },
+        // })
         return cexPrice
     }
 
@@ -535,7 +534,7 @@ export class Arbitrageur {
         return PerpService.fromWei(oraclePrice[0].d)
     }
 
-    calculateRegulatedPositionNotional(exchangeConfig: ExchangeConfig, quoteBalance: Big, maxSlippageAmount: Big, position: Position, side: Side): Big {
+    calculateRegulatedPositionNotional(exchangePair: string, exchangeConfig: ExchangeConfig, quoteBalance: Big, maxSlippageAmount: Big, position: Position, side: Side): Big {
         let maxOpenNotional = Big(0)
 
         // Example
@@ -579,18 +578,18 @@ export class Arbitrageur {
         let amount = maxSlippageAmount
         if (amount.gt(maxOpenNotional)) {
             amount = maxOpenNotional
-            this.log.jinfo({
-                event: "AmountSakePerpExceedCap",
-                params: {
-                    exchangeConfig,
-                    side,
-                    size: +position.size,
-                    openNotional: +position.openNotional,
-                    maxSlippageAmount: +maxSlippageAmount,
-                    maxOpenNotional: +maxOpenNotional,
-                    amount: +amount,
-                },
-            })
+            // this.log.jinfo({
+            //     event: "AmountSakePerpExceedCap",
+            //     params: {
+            //         exchangePair,
+            //         side,
+            //         size: +position.size,
+            //         openNotional: +position.openNotional,
+            //         maxSlippageAmount: +maxSlippageAmount,
+            //         maxOpenNotional: +maxOpenNotional,
+            //         amount: +amount,
+            //     },
+            // })
         }
 
         const feeSafetyMargin = exchangeConfig.ASSET_CAP.mul(this.sakeperpFee).mul(3)
@@ -603,7 +602,7 @@ export class Arbitrageur {
             this.log.jinfo({
                 event: "AmountNotReachSakePerpMinTradeNotional",
                 params: {
-                    exchangeConfig,
+                    exchangePair,
                     side,
                     size: +position.size,
                     openNotional: +position.openNotional,
@@ -617,7 +616,7 @@ export class Arbitrageur {
             this.log.jinfo({
                 event: "AmountZero",
                 params: {
-                    exchangeConfig,
+                    exchangePair,
                     side,
                     size: +position.size,
                     openNotional: +position.openNotional,
@@ -631,7 +630,7 @@ export class Arbitrageur {
             this.log.jinfo({
                 event: "AmountCalculated",
                 params: {
-                    exchangeConfig,
+                    exchangePair,
                     side,
                     size: +position.size,
                     openNotional: +position.openNotional,
@@ -687,10 +686,27 @@ export class Arbitrageur {
         const gasPrice = await this.ethService.getSafeGasPrice()
 
         const release = await this.nonceMutex.acquire()
+
+        const nowTime = Date.now()
+        if (nowTime - this.openDEXPositionTime[exchangePair] < 4000){
+            this.log.jinfo({
+                event: "OpenDEXPositionTime",
+                params: {
+                    exchangePair: exchangePair,
+                    openDEXPositionTime: this.openDEXPositionTime,
+                    nowTime: nowTime
+                }
+            })
+            release()
+            return
+        }
+        this.openDEXPositionTime[exchangePair] = nowTime
+ 
         let tx
         try {
             tx = await this.perpService.openPosition(
                 this.arbitrageur,
+                exchangePair,
                 exchange.address,
                 side,
                 amount,
@@ -722,7 +738,24 @@ export class Arbitrageur {
         await tx.wait()
     }
 
-    private async openCEXPosition(marketId: string, leverage: Big, positionSizeAbs: Big, side: Side): Promise<void> {
+    private async openCEXPosition(marketId: string, leverage: Big, positionSizeAbs: Big, side: Side, open: boolean): Promise<void> {
+        const release = await this.nonceMutex.acquire()
+        const nowTime = Date.now()
+        if (nowTime - this.openCEXPositionTime[marketId] < 4000){
+            this.log.jinfo({
+                event: "OpenCEXPositionTime",
+                params: {
+                    marketId: marketId,
+                    openCEXPositionTime: this.openCEXPositionTime,
+                    nowTime: nowTime
+                }
+            })
+            release()
+            return
+        }
+        this.openCEXPositionTime[marketId] = nowTime
+        release()
+
         let _type = "market"
         let _side = side === Side.BUY ? "buy" : "sell"
         
@@ -740,11 +773,53 @@ export class Arbitrageur {
             leverage: leverage,
         }
 
-        this.log.jinfo({
-            event: "OpenCEXPosition",
-            params: payload,
-        })
+        if (open) {
+            this.log.jinfo({
+                event: "OpenCEXPosition",
+                params: payload,
+            })
+        }else{
+            this.log.jinfo({
+                event: "CloseCEXPosition",
+                params: payload,
+            }) 
+        }
         await this.cexService.placeOrder(this.cexClient, payload)
+    }
+
+    private async closeSakePerpPosition(exchange: Exchange, exchangePair: string): Promise<void> {
+        const gasPrice = await this.ethService.getSafeGasPrice()
+
+        const release = await this.nonceMutex.acquire()
+        let tx
+        try {
+            tx = await this.perpService.closePosition(
+                this.arbitrageur,
+                exchange.address,
+                exchangePair,
+                Big(0),
+                {
+                    nonce: this.nextNonce,
+                    gasPrice,
+                },
+            )
+            this.nextNonce++
+        } finally {
+            release()
+        }
+        await tx.wait()
+    }
+
+
+    private async closeCexPosition(exchangeConfig: ExchangeConfig, cexPosition: CexPosition): Promise<void> {
+        if (cexPosition){
+            const netSize = cexPosition.netSize
+            if (netSize.gt(0)){
+                await this.openCEXPosition(exchangeConfig.CEX_MARKET_ID, exchangeConfig.SAKEPERP_LEVERAGE, netSize.abs(), Side.SELL, false)
+            }else{
+                await this.openCEXPosition(exchangeConfig.CEX_MARKET_ID, exchangeConfig.SAKEPERP_LEVERAGE, netSize.abs(), Side.BUY, false) 
+            }
+        }
     }
 
     async calculateTotalValue(exchanges: Exchange[]): Promise<void> {
@@ -764,6 +839,171 @@ export class Arbitrageur {
                 cexAccountValue: +this.cexAccountValue,
                 totalPositionValue: +totalPositionValue,
             },
+        })
+    }
+
+
+    private async checkDexGasBalance(): Promise<boolean>  {
+        // Check gas balance - needed for gas payments
+        const gasBalance = await this.ethService.getBalance(this.arbitrageur.address)
+        this.log.jinfo({
+            event: "GasBalance",
+            params: { balance: gasBalance.toFixed() },
+        })
+        if (gasBalance.lt(this.preflightCheck.GAS_BALANCE_THRESHOLD)) {
+            this.log.jwarn({
+                event: "gasNotEnough",
+                params: { balance: gasBalance.toFixed()},
+            })
+            this.mailNotify("GasNotEnough", "Gas Not Enough: " + gasBalance.toFixed())
+            return false
+        }
+        return true
+    }
+
+    private async checkDexBalance (quoteAssetAddr: string, arbitrageurAddr: string): Promise<Big> {
+        const quoteBalance = await this.erc20Service.balanceOf(quoteAssetAddr, arbitrageurAddr)
+        if (quoteBalance.lt(this.preflightCheck.USD_BALANCE_THRESHOLD)) {
+            this.log.jwarn({
+                event: "QuoteAssetNotEnough",
+                params: { balance: quoteBalance.toFixed() },
+            })
+            this.mailNotify("QuoteAssetNotEnough", "Quote Asset Not Enough: " + quoteBalance.toFixed())
+            // NOTE we don't abort prematurely here because we don't know yet which direction
+            // the arbitrageur will go. If it's the opposite then it doesn't need more quote asset to execute
+        }
+        return quoteBalance
+    }
+
+    private async checkCexBalance(): Promise<boolean>{
+        // Fetch CEX account info
+        const cexAccountInfo = await this.cexService.getAccountInfo(this.cexClient)
+        this.cexAccountValue = cexAccountInfo.totalAccountValue
+
+        // Check CEX balance (USD)
+        const cexBalance = cexAccountInfo.freeCollateral
+        this.log.jinfo({
+            event: "CexUsdBalance",
+            params: { balance: cexBalance.toFixed() },
+        })
+        if (cexBalance.lt(this.preflightCheck.CEX_USD_BALANCE_THRESHOLD)) {
+            this.log.jerror({
+                event: "CexUsdNotEnough",
+                params: { 
+                    balance: cexBalance.toFixed() ,
+                    threshold:this.preflightCheck.CEX_USD_BALANCE_THRESHOLD 
+                },
+            })
+            this.mailNotify("CexUsdNotEnough", "Cex Usd Not Enough: " + cexBalance.toFixed())
+            return false
+        }
+
+        // Check CEX margin ratio
+        const cexMarginRatio = cexAccountInfo.marginFraction
+        this.log.jinfo({
+            event: "CexMarginRatio",
+            params: { cexMarginRatio: +cexMarginRatio.toFixed(6) },
+        })
+        if (!cexMarginRatio.eq(0) && cexMarginRatio.lt(this.preflightCheck.CEX_MARGIN_RATIO_THRESHOLD)) {
+            this.log.jerror({
+                event: "CexMarginRatioTooLow",
+                params: { 
+                    balance: +cexMarginRatio.toFixed(6) ,
+                    threshold: this.preflightCheck.CEX_MARGIN_RATIO_THRESHOLD 
+                },
+            })
+            return false
+        }
+        return true
+    }
+
+    private async setTradingData(marketId: string, value: Big): Promise<void> {
+        if (this.needTradingData){
+            this.tradingData.data[marketId] = {openSpread: value }
+            this.tradingData.setTradingData()
+        }
+    } 
+
+    private async checkCexPositionRisk(symbol: string, spread: Big, exchange: Exchange, cexPosition: CexPosition): Promise<boolean>{
+        if (!this.needTradingData){
+            return true
+        }
+        const exchangeState = await this.perpService.getExchangeStates(exchange.address)
+        const exchangePair = this.getExchangePair(exchangeState)
+        const exchangeConfig = this.exchangeConfigMap[exchangePair]  
+
+        const risk = await this.cexService.positionRisk(symbol)
+        if (risk.liquidationPrice.eq(0)) {
+            return true
+        }
+
+        const riskRatio = risk.markPrice.sub(risk.liquidationPrice).div(risk.liquidationPrice).abs()
+
+        const openStruct = this.tradingData.getTradingData(symbol)
+        const openSpread = Big(openStruct.openSpread)
+
+        this.log.jinfo({
+            event: "CexPositionRisk",
+            params: { 
+                symbol: symbol,
+                liquidationPrice: risk.liquidationPrice,
+                markPrice: risk.markPrice,
+                riskRatio: +riskRatio.toFixed(6),
+                openSpread: +openSpread.toFixed(6),
+                spread: +spread.toFixed(6), 
+            },
+        }) 
+
+        if (riskRatio.lt(Big(this.preflightCheck.CEX_LIQUIDATION_RATIO))) {
+            if (openSpread.abs().lt(spread.abs())) { 
+                await Promise.all([
+                    await this.closeSakePerpPosition(exchange, exchangePair),
+                    await this.closeCexPosition(exchangeConfig, cexPosition)
+                ])
+                this.mailNotify("CexPositionRisk", symbol + "liquidation ratio is: " + riskRatio.toFixed(6))
+            }else{
+                await this.cexService.transferFromSpot(this.preflightCheck.CEX_USD_BALANCE_THRESHOLD)
+            }
+            return false
+        }
+        return true
+    }
+
+
+    private async mailNotify(title: string, message: string): Promise<void> {
+        if (!this.serverProfile.emailUser || !this.serverProfile.emailPass){
+            return
+        }
+
+        const nowTime = Date.now()
+        if (nowTime - this.emailEventMap[title] < 300000){
+            return
+        }
+        this.emailEventMap[title] = nowTime
+ 
+        let transporter: Transporter = nodemailer.createTransport({
+            host: this.serverProfile.emailHost,
+            port: Number(this.serverProfile.emailPort),
+            // secure: false, // true for 465, false for other ports
+            auth: {
+              user: this.serverProfile.emailUser, // generated ethereal user
+              pass: this.serverProfile.emailPass, // generated ethereal password
+            },
+        })
+    
+        let info = await transporter.sendMail({
+            from: ` ${title} <${this.serverProfile.emailUser}>`, 
+            to: this.serverProfile.emailTo, 
+            subject: "SakePerp-Arbitrageur",
+            text: message, 
+            html: message, 
+        });
+           
+        this.log.jinfo({
+            event: "mailNotify",
+            title: title,
+            message: message,
+            id: info.messageId,
         })
     }
 }

@@ -12,6 +12,11 @@ export class ServerProfile {
     readonly cexApiPassword: string
     readonly cexSubaccount: string | undefined
     readonly cexPlatform: string
+    readonly emailUser: string
+    readonly emailPass: string
+    readonly emailTo: string
+    readonly emailHost: string
+    readonly emailPort: string
 
     constructor() {
 
@@ -22,6 +27,11 @@ export class ServerProfile {
         this.cexApiPassword = process.env.CEX_API_PASSWORD!
         this.cexSubaccount = process.env.CEX_SUBACCOUNT
         this.cexPlatform = process.env.CEX_PLATFORM!
+        this.emailUser = process.env.EMAIL_USER!
+        this.emailPass = process.env.EMAIL_PASSWORD!
+        this.emailTo = process.env.EMAIL_TO!
+        this.emailHost = process.env.EMAIL_HOST!
+        this.emailPort = process.env.EMAIL_PROT!
 
         this.log.jinfo({
             event: "ServerProfile",

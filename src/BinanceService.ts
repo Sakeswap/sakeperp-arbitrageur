@@ -5,8 +5,9 @@ import Big from "big.js"
 import { URL } from "url"
 import axios, { Method } from "axios"
 import * as CryptoJs from "crypto-js"
-import { AccountInfo, CexPosition, PlaceOrderPayload, CexMarket, AuthenticationMethod } from "./Types"
+import { AccountInfo, CexPosition, PlaceOrderPayload, CexMarket, AuthenticationMethod, CexPositionRisk } from "./Types"
 import { CexService } from "./CexService"
+import fetch from "node-fetch"
 
 @Service()
 export class BinanceService implements CexService {
@@ -49,6 +50,7 @@ export class BinanceService implements CexService {
                 TotalMaintMargin = TotalMaintMargin.add(Big(positionEntity.maintMargin))
                 const position = this.toCexPosition(positionEntity)
                 positionsMap[position.future] = position
+
             }
         }
 
@@ -70,6 +72,7 @@ export class BinanceService implements CexService {
         )
 
         const positions: Record<string, CexPosition> = {}
+
         for (let i = 0; i < response.data.positions.length; i++) {
             const positionEntity = response.data.positions[i]
             if (positionEntity.symbol === marketId) {
@@ -107,9 +110,12 @@ export class BinanceService implements CexService {
     async placeOrder(client: any, payload: PlaceOrderPayload): Promise<void> {
         const quantityPrecision = await this.baseAssetPrecision(payload.market)
         payload.size = parseFloat(payload.size.toFixed(quantityPrecision))
-
+        
         await this.getServerTime()
 
+        if (payload.size == 0){
+            return
+        }
         try {
             const response = await this.makeRequest(
                 `${this.url}/fapi/v1/order`,
@@ -261,6 +267,24 @@ export class BinanceService implements CexService {
         return false
     }
 
+    async positionRisk(asset: string):  Promise<CexPositionRisk>  {
+        const response = await this.makeRequest(
+            `${this.url}/fapi/v2/positionRisk`,
+            "get",
+            AuthenticationMethod.SIGNED,
+            ["symbol", asset]
+        )
+        this.log.jinfo({
+            event: "PositionRisk",
+            params: response.data,
+        })
+        return {
+            markPrice: Big(response.data[0].markPrice),
+            liquidationPrice: Big(response.data[0].liquidationPrice), 
+        }
+    }
+
+
     private async baseAssetPrecision(asset: string):  Promise<number>  {
         const response = await this.makeRequest(
             `${this.url}/fapi/v1/exchangeInfo`,
@@ -274,5 +298,30 @@ export class BinanceService implements CexService {
             }
         }
         return 0
+    }
+
+    async transferFromSpot(amount: Big) :  Promise<void>  {
+ 
+        await this.getServerTime()
+        try {
+            const response = await this.makeRequest(
+                `https://api.binance.com/sapi/v1/futures/transfer`,
+                "post",
+                AuthenticationMethod.SIGNED,
+                ["asset", "USDT"],
+                ["amount", Number(amount)],
+                ["type", 1]
+            )
+            this.log.jinfo({
+                event: "TransferFromSpot",
+                amount: +amount.toFixed(),
+            }) 
+        } catch (error) {
+            this.log.jinfo({
+                event: "transferFromSpotError",
+                params: error,
+            })
+        }
+
     }
 }

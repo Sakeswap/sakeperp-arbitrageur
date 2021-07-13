@@ -24,7 +24,9 @@
 | Case3   | 1545           | -25          | 1550      | +50     | +25       |
 | Case4   | 1450           | +70          | 1455      | -45     | +25       |
 
-
+除了默认策略外，还添加了几个功能：
+- 循环开仓模型到开关仓模型.
+- 余额监控和邮件通知. 
 
 # 注意
 
@@ -45,7 +47,7 @@
 ## 账户准备
 
 - 存入BUSD以及BNB在BSC钱包账户 [SakePerp Exchange](https://www.binance.com/zh-CN/busd)
-- 在中心化交易所账户存入足够资金 (Binance/FTX/Huobi/OKex), 创建并保存账户API。
+- 在中心化交易所账户存入足够资金 (Binance/FTX), 创建并保存账户API。
 
 ## 下载
 
@@ -63,7 +65,7 @@ WEB3_ENDPOINT=wss://bsc-ws-node.nariox.org:443
 # The private key must start with "0x" - add it if necessary (e.g. from private key exported from Metamask)
 ARBITRAGEUR_PK=YOUR_WALLET_PRIVATE_KEY
 
-# binance/ftx/huobi/okex
+# binance/ftx
 CEX_PLATFORM=binance
 
 # CEX API keys
@@ -83,7 +85,7 @@ LOG_PERSISTENCE=false
    2. ANKR: https://app.ankr.com/api
    3. GetBlock.io: https://getblock.io/nodes/bsc
 
-2.  `sakeperp-arbitrageur` 目前支持4个中心化交易所 [Binance](https://www.binance.com/), [FTX](https://ftx.com/), [Huobi](https://www.huobi.com/) 以及 [OKEx](https://www.okex.com/)
+2.  `sakeperp-arbitrageur` 目前支持 [Binance](https://www.binance.com/), [FTX](https://ftx.com/), [Huobi](https://www.huobi.com/) 以及 [OKEx](https://www.okex.com/)很快会支持.
 
 
 `config/config.json`中配置参数:
@@ -108,7 +110,7 @@ LOG_PERSISTENCE=false
             "SAKEPERP_LONG_ENTRY_TRIGGER": -0.005,  // open the long position at Perp exchange when the spread is =< -0.5%
             "ADJUST_MARGIN_RATIO_THRESHOLD": 0.1,
             "MAX_SLIPPAGE_RATIO": 0.001,  // set the max slippage ratio limit to avoid large slippage 
-            "CEX_MARKET_ID": "BTC-USDT",  // perpetual pair name in Binance/FTX/Huobi/OKex.
+            "CEX_MARKET_ID": "BTC-USDT",  // perpetual pair name in Binance/FTX.
             "CEX_MIN_TRADE_SIZE": 0.001   
         },
         .....
@@ -146,7 +148,7 @@ mkdir sakeperp-arbitrageur
 cd  sakeperp-arbitrageur
 ```
 
-复制 `.env.production` 以及 `config.json` 从 /config folder 到一个新的文件夹，并创建一个新的docker-compose.yml file ：
+复制 `.env.production` , `config.json` 以及`tradingdata.json`从 /config folder 到一个新的文件夹，并创建一个新的docker-compose.yml file ：
 ```yml
 version: "3.5"
 
