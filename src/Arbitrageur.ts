@@ -397,14 +397,14 @@ export class Arbitrageur {
             const priceDiff = exchangePrice.sub(openPrice).div(openPrice)    
             let op = ""         
             if (position.size.gt(0)) { // long
-                if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && exchangePrice.lt(openPrice)) {
+                if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && cexPrice.lt(openPrice)) {
                     op = "long_loss"
                 } 
                 if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && priceDiff.gt(Big(exchangeConfig.SAKEPERP_LONG_OPEN_PRICE_SPREAD))) {
                     op = "long_profit" 
                 }
             } else {  // short
-               if ( spread.lte(Big(exchangeConfig.SAKEPERP_SHORT_CLOSE_TRIGGER)) && (exchangePrice.gt(openPrice))) {
+               if ( spread.lte(Big(exchangeConfig.SAKEPERP_SHORT_CLOSE_TRIGGER)) && (cexPrice.gt(openPrice))) {
                     op = "short_loss"
                }
                
