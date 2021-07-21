@@ -448,7 +448,7 @@ export class Arbitrageur {
             })
 
             // Open positions if needed
-            if (spread.lte(exchangeConfig.SAKEPERP_LONG_ENTRY_TRIGGER)) {
+            if (spread.gte(exchangeConfig.SAKEPERP_LONG_ENTRY_LOWER_TRIGGER) && spread.lte(exchangeConfig.SAKEPERP_LONG_ENTRY_UPPER_TRIGGER)) {
                 const result = await this.perpService.checkWaitingPeriod(this.arbitrageur, exchange.address, this.arbitrageur.address, Side.BUY)
                 if (!result){
                     return
@@ -466,7 +466,7 @@ export class Arbitrageur {
                 ])
                 this.setTradingData(exchangeConfig.CEX_MARKET_ID, spread)
  
-            } else if (spread.gte(exchangeConfig.SAKEPERP_SHORT_ENTRY_TRIGGER)) {
+            } else if (spread.gte(exchangeConfig.SAKEPERP_SHORT_ENTRY_LOWER_TRIGGER) && spread.lte(exchangeConfig.SAKEPERP_SHORT_ENTRY_UPPER_TRIGGER)) {
                 const result = await this.perpService.checkWaitingPeriod(this.arbitrageur, exchange.address, this.arbitrageur.address, Side.SELL)
                 if (!result){
                     return

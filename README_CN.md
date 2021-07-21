@@ -106,11 +106,17 @@ LOG_PERSISTENCE=false
             "ASSET_CAP": 1000,   // You may adjust it based on your own risk.
             "SAKEPERP_LEVERAGE": 5,    // You may adjust it based on your own risk.
             "SAKEPERP_MIN_TRADE_NOTIONAL": 10,
-            "SAKEPERP_SHORT_ENTRY_TRIGGER": 0.005,  // open the short position at Perp exchange when the spread is >= 0.5 % 
-            "SAKEPERP_LONG_ENTRY_TRIGGER": -0.005,  // open the long position at Perp exchange when the spread is =< -0.5%
+            "SAKEPERP_LONG_ENTRY_UPPER_TRIGGER": -0.005, // open the long position at Perp exchange when the spread is =< -0.5%
+            "SAKEPERP_LONG_ENTRY_LOWER_TRIGGER": -0.02,  // open the long position at Perp exchange when the spread is >= -2%  
+            "SAKEPERP_LONG_CLOSE_TRIGGER": 0.002,        // close long position when spread is >= 0.2% 
+            "SAKEPERP_LONG_OPEN_PRICE_SPREAD": 0.05,     // close long position when amm price and open price spread is > 5%
+            "SAKEPERP_SHORT_ENTRY_UPPER_TRIGGER": 0.02,  // open the short position at Perp exchange when the spread is <= 2 %
+            "SAKEPERP_SHORT_ENTRY_LOWER_TRIGGER": 0.005, // open the short position at Perp exchange when the spread is >= 0.5 %    
+            "SAKEPERP_SHORT_CLOSE_TRIGGER": -0.002,   // close short position when spread is <= -0.2%  
+            "SAKEPERP_SHORT_OPEN_PRICE_SPREAD": -0.05,// close short position when amm price and open price spread is < -5% 
             "ADJUST_MARGIN_RATIO_THRESHOLD": 0.1,
             "MAX_SLIPPAGE_RATIO": 0.001,  // set the max slippage ratio limit to avoid large slippage 
-            "CEX_MARKET_ID": "BTC-USDT",  // perpetual pair name in Binance/FTX.
+            "CEX_MARKET_ID": "BTC-USDT",  // perpetual pair name in Binance/FTX
             "CEX_MIN_TRADE_SIZE": 0.001   
         },
         .....
