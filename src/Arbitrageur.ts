@@ -392,42 +392,75 @@ export class Arbitrageur {
             if (!check){
                 return
             }
-        
-            const openPrice = position.openNotional.div(position.size.abs())  
-            const priceDiff = exchangePrice.sub(openPrice).div(openPrice)    
+            const gapAmm  = await this.perpService.getGapForMovingAmm(exchange.address, systemMetadata.sakePerpVault)
+ 
+
             let op = ""         
-            if (position.size.gt(0)) { // long
-                if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && cexPrice.lt(openPrice)) {
-                    op = "long_loss"
-                } 
-                if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && priceDiff.gt(Big(exchangeConfig.SAKEPERP_LONG_OPEN_PRICE_SPREAD))) {
-                    op = "long_profit" 
+            const openPrice = position.openNotional.div(position.size.abs())  
+
+            if (gapAmm.gt(0)) {
+                const priceDiff = exchangePrice.sub(openPrice).div(openPrice)    
+                if (position.size.gt(0)) { // long
+                    if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && cexPrice.lt(openPrice)) {
+                        op = "long_loss"
+                    } 
+                    if ( spread.gte(Big(exchangeConfig.SAKEPERP_LONG_CLOSE_TRIGGER)) && priceDiff.gt(Big(exchangeConfig.SAKEPERP_LONG_OPEN_PRICE_SPREAD))) {
+                        op = "long_profit" 
+                    }
+                } else {  // short
+                    if ( spread.lte(Big(exchangeConfig.SAKEPERP_SHORT_CLOSE_TRIGGER)) && (cexPrice.gt(openPrice))) {
+                        op = "short_loss"
+                    }
+                    if ( spread.lte(Big(exchangeConfig.SAKEPERP_SHORT_CLOSE_TRIGGER)) && priceDiff.lt(Big(exchangeConfig.SAKEPERP_SHORT_OPEN_PRICE_SPREAD))) {
+                        op = "short_profit" 
+                    } 
                 }
-            } else {  // short
-               if ( spread.lte(Big(exchangeConfig.SAKEPERP_SHORT_CLOSE_TRIGGER)) && (cexPrice.gt(openPrice))) {
-                    op = "short_loss"
-               }
-               
-               if ( spread.lte(Big(exchangeConfig.SAKEPERP_SHORT_CLOSE_TRIGGER)) && priceDiff.lt(Big(exchangeConfig.SAKEPERP_SHORT_OPEN_PRICE_SPREAD))) {
-                    op = "short_profit" 
-               } 
+
+                this.log.jinfo({
+                    event: "PositionProfit",
+                    params: {
+                        exchangePair,
+                        operate: op,
+                        position:  +position.size.toFixed(6),
+                        openNotional: +position.openNotional.toFixed(6), 
+                        openPrice: +openPrice.toFixed(6),
+                        ammPrice: +exchangePrice.toFixed(6),
+                        cexPrice: +cexPrice.toFixed(6),
+                        amm_cex: +spread.toFixed(6),
+                        amm_open: +priceDiff.toFixed(6),
+                        gapAmm: +gapAmm.toFixed(6),
+                    },
+                })
+    
+            }else{
+                const priceDiff = cexPrice.sub(openPrice).div(openPrice)    
+                if (position.size.gt(0)) { // long
+                    if ( priceDiff.gte(exchangeConfig.SAKEPERP_LONG_CEX_OPEN_PRICE_SPREAD)) {
+                        op = "long_stop" 
+                    }
+                } else {  // short
+                    if ( priceDiff.lte(exchangeConfig.SAKEPERP_SHORT_CEX_OPEN_PRICE_SPREAD)) {
+                        op = "short_stop" 
+                    } 
+                } 
+
+                this.log.jinfo({
+                    event: "PositionProfit",
+                    params: {
+                        exchangePair,
+                        operate: op,
+                        position:  +position.size.toFixed(6),
+                        openNotional: +position.openNotional.toFixed(6), 
+                        openPrice: +openPrice.toFixed(6),
+                        ammPrice: +exchangePrice.toFixed(6),
+                        cexPrice: +cexPrice.toFixed(6),
+                        amm_cex: +spread.toFixed(6),
+                        cex_open: +priceDiff.toFixed(6),
+                        gapAmm: +gapAmm.toFixed(6), 
+                    },
+                })    
             }
            
-            this.log.jinfo({
-                event: "PositionProfit",
-                params: {
-                    exchangePair,
-                    operate: op,
-                    position:  +position.size.toFixed(6),
-                    openNotional: +position.openNotional.toFixed(6), 
-                    openPrice: +openPrice.toFixed(6),
-                    ammPrice: +exchangePrice.toFixed(6),
-                    cexPrice: +cexPrice.toFixed(6),
-                    amm_cex: +spread.toFixed(6),
-                    amm_open: +priceDiff.toFixed(6),
-                },
-            })
-
 
             if (op != "") {
                 await Promise.all([
@@ -437,6 +470,9 @@ export class Arbitrageur {
                 this.setTradingData(exchangeConfig.CEX_MARKET_ID, Big(0))
             }
         }else{
+
+            const gapAmm  = await this.perpService.getGapForMovingAmm(exchange.address, systemMetadata.sakePerpVault)
+
             this.log.jinfo({
                 event: "CalculatedPrice",
                 params: {
@@ -444,11 +480,16 @@ export class Arbitrageur {
                     ammPrice: exchangePrice.toFixed(4),
                     cexPrice: cexPrice.toFixed(4),
                     amm_cex: spread.toFixed(4),
+                    gapAmm: +gapAmm.toFixed(6),
                 },
             })
 
+            if (gapAmm.lte(0)) {
+                return
+            }
+
             // Open positions if needed
-            if (spread.gte(exchangeConfig.SAKEPERP_LONG_ENTRY_LOWER_TRIGGER) && spread.lte(exchangeConfig.SAKEPERP_LONG_ENTRY_UPPER_TRIGGER)) {
+            if (spread.lte(exchangeConfig.SAKEPERP_LONG_ENTRY_TRIGGER)) {
                 const result = await this.perpService.checkWaitingPeriod(this.arbitrageur, exchange.address, this.arbitrageur.address, Side.BUY)
                 if (!result){
                     return
@@ -466,7 +507,7 @@ export class Arbitrageur {
                 ])
                 this.setTradingData(exchangeConfig.CEX_MARKET_ID, spread)
  
-            } else if (spread.gte(exchangeConfig.SAKEPERP_SHORT_ENTRY_LOWER_TRIGGER) && spread.lte(exchangeConfig.SAKEPERP_SHORT_ENTRY_UPPER_TRIGGER)) {
+            } else if (spread.gte(exchangeConfig.SAKEPERP_SHORT_ENTRY_TRIGGER)) {
                 const result = await this.perpService.checkWaitingPeriod(this.arbitrageur, exchange.address, this.arbitrageur.address, Side.SELL)
                 if (!result){
                     return

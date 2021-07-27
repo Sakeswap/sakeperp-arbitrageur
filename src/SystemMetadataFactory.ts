@@ -36,6 +36,7 @@ export class SystemMetadataFactory {
         let sakePerpAddr = ""
         let sakePerpViewerAddr = ""
         let sakePerpStateAddr = ""
+        let sakePerpVault = "" 
 
         for (let i = 0; i < contracts.length; i++) {
             if (contracts[i].name == "SakePerp") {
@@ -48,6 +49,8 @@ export class SystemMetadataFactory {
                 exchangeReaderAddr = contracts[i].addr
             }else if  (contracts[i].name == "SakePerpState") {
                 sakePerpStateAddr = contracts[i].addr 
+            }else if  (contracts[i].name == "SakePerpVault") {
+                sakePerpVault = contracts[i].addr 
             }
         }
 
@@ -56,7 +59,8 @@ export class SystemMetadataFactory {
             exchangeReaderAddr: exchangeReaderAddr,
             sakePerpAddr: sakePerpAddr,
             sakePerpViewerAddr: sakePerpViewerAddr,
-            sakePerpStateAddr: sakePerpStateAddr 
+            sakePerpStateAddr: sakePerpStateAddr,
+            sakePerpVault: sakePerpVault 
         }
     }
 }
@@ -79,4 +83,5 @@ export interface EthMetadata {
     readonly sakePerpAddr: string
     readonly sakePerpViewerAddr: string
     readonly sakePerpStateAddr: string
+    readonly sakePerpVault: string
 }

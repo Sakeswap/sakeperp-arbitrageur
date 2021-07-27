@@ -3,6 +3,7 @@ import {  ExchangeReader} from "../types/ethers/ExchangeReader"
 import { SakePerpState } from "../types/ethers/SakePerpState"
 import { SakePerp } from "../types/ethers/SakePerp"
 import {  SakePerpViewer } from "../types/ethers/SakePerpViewer"
+import {  SakePerpVault } from "../types/ethers/SakePerpVault"
 import {  SystemSettings } from "../types/ethers/SystemSettings"
 
 import { BigNumber } from "@ethersproject/bignumber"
@@ -21,6 +22,7 @@ import ExchangeReaderArtifact from "@sakeperp/artifact/src/ExchangeReader.json"
 import SakePerpArtifact from "@sakeperp/artifact/src/SakePerp.json"
 import SakePerpStateArtifact from "@sakeperp/artifact/src/SakePerpState.json"
 import SakePerpViewerArtifact from "@sakeperp/artifact/src/SakePerpViewer.json"
+import SakePerpVaultArtifact from "@sakeperp/artifact/src/SakePerpVault.json"
 import SystemSettingsArtifact from "@sakeperp/artifact/src/SystemSettings.json"
 
 export enum Side {
@@ -91,6 +93,15 @@ export class PerpService {
             signer,
         )
     }
+
+    private async createSakePerpVault(signer?: ethers.Signer): Promise<SakePerpVault> {
+        return this.createContract<SakePerpVault>(
+            systemMetadata => systemMetadata.sakePerpVault,
+            SakePerpVaultArtifact,
+            signer,
+        )
+    }
+
 
     private async createSakePerpViewer(signer?: ethers.Signer): Promise<SakePerpViewer> {
         return this.createContract<SakePerpViewer>(
@@ -391,6 +402,13 @@ export class PerpService {
         const sakePerpViewer = await this.createSakePerpViewer()
         const unrealizedPnl = (await sakePerpViewer.functions.getUnrealizedPnl(exchangeAddr, traderAddr, BigNumber.from(pnlCalOption)))[0]
         return Big(PerpService.fromWei(unrealizedPnl.d))
+    }
+
+
+    async getGapForMovingAmm(exchangeAddr: string, sakeperpVaultAddr: string): Promise<Big> {
+        const exchangeReader = await this.createExchangeReader()
+        const gapMM = (await exchangeReader.functions.getGapForMovingAmm(exchangeAddr, sakeperpVaultAddr))[0]
+        return Big(PerpService.fromWei(gapMM.d))
     }
 
     // noinspection JSMethodCanBeStatic

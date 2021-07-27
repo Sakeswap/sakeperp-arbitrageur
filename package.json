@@ -16,7 +16,7 @@
     "license": "BSD-3-Clause",
     "dependencies": {
         "@luminati-io/socksv5": "0.0.7",
-        "@sakeperp/artifact": "1.0.4",
+        "@sakeperp/artifact": "1.0.6",
         "@types/nodemailer": "^6.3.0",
         "@types/fs-extra": "8.1.0",
         "async-mutex": "0.2.6",
