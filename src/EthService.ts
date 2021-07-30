@@ -78,7 +78,7 @@ export class EthService {
                 const cancelTx = await signer.sendTransaction({
                     to: signer.address,
                     value: 0,
-                    gasPrice: tx.gasPrice.mul(2), // TODO Make configurable?
+                    gasPrice: tx.gasPrice?.mul(2), // TODO Make configurable?
                     nonce: tx.nonce,
                 })
 
@@ -87,9 +87,9 @@ export class EthService {
                         event: "txCancelling",
                         params: {
                             tx: tx.hash,
-                            txGasPrice: tx.gasPrice.toString(),
+                            txGasPrice: tx.gasPrice?.toString(),
                             cancelTx: cancelTx.hash,
-                            cancelTxGasPrice: cancelTx.gasPrice.toString(),
+                            cancelTxGasPrice: cancelTx.gasPrice?.toString(),
                             nonce: cancelTx.nonce,
                         },
                     }),
