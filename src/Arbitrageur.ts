@@ -772,7 +772,7 @@ export class Arbitrageur {
                 quoteAssetAmount: +quoteAssetAmount,
                 leverage: leverage.toFixed(),
                 txHash: tx.hash,
-                gasPrice: tx.gasPrice.toString(),
+                gasPrice: tx.gasPrice?.toString(),
                 nonce: tx.nonce,
             },
         })
